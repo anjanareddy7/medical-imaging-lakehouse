@@ -1,0 +1,37 @@
+# Environment
+.env
+*.env
+
+# Kaggle
+~/.kaggle/
+access_token
+
+# Data - never commit raw data or processed images to GitHub
+data/
+bronze/
+silver/
+gold/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+
+# Poetry
+poetry.lock
+
+# Jupyter
+.ipynb_checkpoints/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
