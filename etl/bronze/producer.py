@@ -1,20 +1,23 @@
 import json
 import os
 import time
-from kafka import KafkaProducer
+from confluent_kafka import Producer
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 TOPIC = "dicom-ingestion"
 DICOM_DIR = "data/raw/stage_2_train_images"
 
+
 def create_producer():
-    return KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda v: json.dumps(v).encode("utf-8")
-    )
+    return Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+
+
+def delivery_report(err, msg):
+    if err is not None:
+        print(f"Delivery failed: {err}")
+
 
 def publish_dicom_events(producer, dicom_dir, limit=None):
-    """Publish a Kafka event for each DICOM file found, simulating arrival."""
     files = [f for f in os.listdir(dicom_dir) if f.endswith(".dcm")]
     if limit:
         files = files[:limit]
@@ -27,15 +30,20 @@ def publish_dicom_events(producer, dicom_dir, limit=None):
             "file_path": os.path.join(dicom_dir, filename),
             "ingestion_timestamp": time.time(),
         }
-        producer.send(TOPIC, value=event)
+        producer.produce(
+            TOPIC,
+            value=json.dumps(event).encode("utf-8"),
+            callback=delivery_report,
+        )
+        producer.poll(0)
 
-        if (i + 1) % 100 == 0:
+        if (i + 1) % 500 == 0:
             print(f"Published {i + 1}/{len(files)} events")
 
     producer.flush()
     print("Done publishing all events.")
 
+
 if __name__ == "__main__":
     producer = create_producer()
-    # Start with a small limit to test before running on all 15,659 files
-    publish_dicom_events(producer, DICOM_DIR, limit=50)
+    publish_dicom_events(producer, DICOM_DIR, limit=None)
