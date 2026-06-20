@@ -8,9 +8,9 @@ access_token
 
 # Data - never commit raw data or processed images to GitHub
 data/
-bronze/
-silver/
-gold/
+/bronze/
+/silver/
+/gold/
 
 # Python
 __pycache__/
