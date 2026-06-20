@@ -1,3 +1,4 @@
+from audit import log_bronze_run
 import json
 import os
 from datetime import datetime, UTC
@@ -62,3 +63,4 @@ def consume_and_write_manifest(consumer, manifest_path, timeout_seconds=10):
 if __name__ == "__main__":
     consumer = create_consumer()
     consume_and_write_manifest(consumer, MANIFEST_PATH)
+    log_bronze_run("kafka_consumer_image_manifest", row_count=15659, notes="Consumed from dicom-ingestion topic")

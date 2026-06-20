@@ -1,4 +1,5 @@
 from pyspark.sql import SparkSession
+from audit import log_bronze_run
 
 POSTGRES_URL = "jdbc:postgresql://localhost:5432/hospital_db"
 POSTGRES_PROPERTIES = {
@@ -6,6 +7,7 @@ POSTGRES_PROPERTIES = {
     "password": "hospital123",
     "driver": "org.postgresql.Driver",
 }
+
 
 def create_spark_session():
     return (
@@ -17,6 +19,7 @@ def create_spark_session():
         .getOrCreate()
     )
 
+
 def ingest_to_bronze():
     spark = create_spark_session()
 
@@ -26,13 +29,23 @@ def ingest_to_bronze():
         properties=POSTGRES_PROPERTIES,
     )
 
-    print(f"Read {df.count()} rows from Postgres")
+    row_count = df.count()
+    print(f"Read {row_count} rows from Postgres")
     df.printSchema()
 
     df.write.format("delta").mode("overwrite").save("bronze/metadata_raw")
 
+    schema_str = df.schema.simpleString()
+    log_bronze_run(
+        "postgres_metadata_ingest",
+        row_count=row_count,
+        schema=schema_str,
+        notes="JDBC read from raw_class_info",
+    )
+
     print("Wrote to bronze/metadata_raw as Delta table")
     spark.stop()
+
 
 if __name__ == "__main__":
     ingest_to_bronze()
