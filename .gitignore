@@ -45,3 +45,4 @@ airflow_home/webserver_config.py
 
 # Model artifacts
 models/*.pt
+!models/pneumonia_classifier_v1.pt

@@ -15,12 +15,16 @@ def test_health_endpoint():
 
 
 def test_predict_with_valid_image():
-    image_dir = os.path.join(os.path.dirname(__file__), "..", "silver", "images_processed")
-    sample_files = os.listdir(image_dir)
-    sample_path = os.path.join(image_dir, sample_files[0])
+    from PIL import Image
+    import io
 
-    with open(sample_path, "rb") as f:
-        response = client.post("/predict", files={"file": (sample_files[0], f, "image/png")})
+    # Generate a synthetic grayscale image so this test doesn't depend on the dataset being present
+    img = Image.new("L", (224, 224), color=128)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    response = client.post("/predict", files={"file": ("synthetic.png", buf, "image/png")})
 
     assert response.status_code == 200
     body = response.json()
@@ -28,7 +32,6 @@ def test_predict_with_valid_image():
     assert 0.0 <= body["pneumonia_probability"] <= 1.0
     assert body["prediction"] in ["Pneumonia", "Normal/Other"]
     assert isinstance(body["high_confidence_positive"], bool)
-
 
 def test_predict_with_corrupt_file():
     corrupt_content = b"this is not a valid image file"
