@@ -96,7 +96,26 @@ def check_duplicate_images(image_dir, sample_size=3000):
         "failing_rows": len(duplicates),
         "passed": len(duplicates) == 0,
     }]
+def check_age_range_validity(metadata_df, max_reasonable_age=120):
+    """Flag patient age buckets that fall outside a clinically plausible range."""
+    from pyspark.sql.functions import col, regexp_extract
 
+    # Extract the lower bound of the bucket (e.g. "150-159" -> 150)
+    age_lower_bound = metadata_df.withColumn(
+        "bucket_lower", regexp_extract(col("patient_age_bucket"), r"^(\d+)-", 1).cast("int")
+    )
+
+    invalid = age_lower_bound.filter(col("bucket_lower") > max_reasonable_age)
+    invalid_count = invalid.count()
+    total = metadata_df.count()
+
+    return [{
+        "check_name": "age_range_validity",
+        "field": "patient_age_bucket",
+        "total_rows": total,
+        "failing_rows": invalid_count,
+        "passed": invalid_count == 0,
+    }]
 
 if __name__ == "__main__":
     spark = create_spark_session()
@@ -106,7 +125,8 @@ if __name__ == "__main__":
     all_results.extend(check_schema_completeness(metadata_df, REQUIRED_FIELDS))
     all_results.extend(check_referential_integrity(metadata_df, "data/raw/stage_2_detailed_class_info.csv"))
     all_results.extend(check_duplicate_images("silver/images_processed"))
-
+    all_results.extend(check_age_range_validity(metadata_df))
+    
     print("\n=== DQ Results ===")
     for r in all_results:
         status = "PASS" if r["passed"] else "FAIL"
