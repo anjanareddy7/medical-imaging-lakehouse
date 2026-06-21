@@ -1,0 +1,108 @@
+# Data Dictionary
+
+## Bronze Layer
+
+### `bronze/metadata_raw`
+Raw hospital metadata, JDBC-ingested from Postgres `raw_class_info` table, untouched.
+
+| Column | Type | Description |
+|---|---|---|
+| patient_id | string | RSNA synthetic patient identifier (UUID format) |
+| class | string | Original RSNA class label: "Normal", "No Lung Opacity / Not Normal", or "Lung Opacity" |
+
+### `bronze/image_manifest.jsonl`
+Kafka consumer output — one record per DICOM file arrival event.
+
+| Field | Type | Description |
+|---|---|---|
+| patient_id | string | Filename-derived patient identifier |
+| file_path | string | Path to the raw DICOM file |
+| ingestion_timestamp | float | Unix timestamp when the producer published the event |
+| consumed_at | string (ISO 8601) | Timestamp when the consumer processed the event |
+| kafka_offset | int | Kafka partition offset for traceability |
+
+### `bronze/audit_log.jsonl`
+Append-only audit trail for every Bronze/Silver ingestion job run.
+
+| Field | Type | Description |
+|---|---|---|
+| job_name | string | Name of the job that ran |
+| run_timestamp | string (ISO 8601) | When the job completed |
+| row_count | int | Rows processed/written |
+| schema | string \| null | Spark schema string, if applicable |
+| notes | string \| null | Free-text context |
+
+---
+
+## Silver Layer
+
+### `silver/dicom_metadata`
+Parsed DICOM headers with PHI anonymization applied. One row per training image.
+
+| Column | Type | Description |
+|---|---|---|
+| patient_id_hash | string | SHA-256 hash (truncated to 16 chars) of the original patient ID |
+| original_filename | string | RSNA synthetic patient ID — used as join key to labels, not PHI |
+| modality | string | DICOM modality code (CR = computed radiography) |
+| view_position | string | PA or AP |
+| body_part_examined | string | Always "CHEST" in this dataset |
+| patient_sex | string | M or F |
+| patient_age_bucket | string | 10-year age bucket (e.g. "50-59"), derived from raw age to reduce re-identification risk |
+| rows | int | Image height in pixels |
+| columns | int | Image width in pixels |
+| study_instance_uid | string | DICOM study identifier |
+| series_instance_uid | string | DICOM series identifier |
+| file_path | string | Path to the original DICOM file |
+
+### `silver/images_processed/*.png`
+Decoded, normalized (0-255 grayscale), and resized (224x224) chest X-ray images. Note: 3,000 of 15,659 total images processed due to local disk constraints (see README "Scoping Decisions").
+
+### `silver/dq_results`
+Output of the hand-rolled PySpark data quality suite.
+
+| Column | Type | Description |
+|---|---|---|
+| check_name | string | One of: schema_completeness, referential_integrity, duplicate_detection, age_range_validity |
+| field | string | The specific field being checked |
+| total_rows | int | Total rows evaluated |
+| failing_rows | int | Rows that failed the check |
+| passed | boolean | Whether the check passed (failing_rows == 0) |
+
+---
+
+## Gold Layer
+
+### `gold/model_ready`
+Final model training table. Partitioned by `split`.
+
+| Column | Type | Description |
+|---|---|---|
+| patient_id | string | RSNA patient identifier |
+| original_filename | string | Matches Silver's original_filename, used to locate the image file |
+| label | int | Binary label: 1 = Lung Opacity (pneumonia), 0 = otherwise |
+| split | string | train / val / test — assigned at the **patient level** to prevent data leakage |
+| modality | string | Carried from Silver |
+| view_position | string | Carried from Silver |
+| patient_sex | string | Carried from Silver |
+| patient_age_bucket | string | Carried from Silver |
+| rows | int | Carried from Silver |
+| columns | int | Carried from Silver |
+| file_path | string | Path to the original DICOM file |
+
+**Split methodology:** Patients (not rows) are shuffled deterministically (seed=42) and assigned 70% train / 15% val / 15% test. All rows for a given patient share the same split, preventing the same patient from appearing in both train and validation.
+
+### `gold/analytics_summary/case_counts`
+Case counts grouped by modality, view position, and label.
+
+### `gold/analytics_summary/demographics`
+Case counts grouped by patient sex, age bucket, and label.
+
+### `gold/analytics_summary/dq_summary`
+Pass rate per DQ check type, aggregated from `silver/dq_results`.
+
+---
+
+## Known Data Quality Findings
+
+- **Referential integrity gap:** 11,025 of 26,684 distinct labeled patients have no corresponding DICOM file in `stage_2_train_images` or `stage_2_test_images` combined — a known characteristic of RSNA's staged data release structure.
+- **Age range outlier:** 2 records have a `patient_age_bucket` outside clinically plausible range (e.g. "150-159"), caught by the `age_range_validity` check — likely a DICOM tag transcription error at the source.
