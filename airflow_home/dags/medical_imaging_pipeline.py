@@ -1,6 +1,6 @@
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from airflow.sdk import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 
@@ -8,8 +8,6 @@ PROJECT_ROOT = "/workspaces/medical-imaging-lakehouse"
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "etl", "bronze"))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "etl", "silver"))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "etl", "gold"))
-
-
 
 
 def run_bronze_metadata_ingest():
@@ -60,12 +58,19 @@ def run_gold_analytics():
         raise RuntimeError("Gold analytics failed")
 
 
+default_args = {
+    "retries": 2,
+    "retry_delay": timedelta(minutes=2),
+}
+
+
 with DAG(
     dag_id="medical_imaging_pipeline",
     description="Bronze -> Silver DQ -> Gold model-ready -> Gold analytics",
     schedule=None,  # manual trigger only for now
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    default_args=default_args,
     tags=["medical-imaging", "lakehouse"],
 ) as dag:
 
