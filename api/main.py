@@ -19,7 +19,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL = load_model(device=DEVICE)
 CONFIDENCE_THRESHOLD = 0.7
 
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 CLINICAL_ALERTS_TOPIC = "clinical-alerts"
 
 producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
@@ -71,12 +71,14 @@ async def predict(file: UploadFile = File(...)):
             "pneumonia_probability": prediction["pneumonia_probability"],
             "alert_timestamp": datetime.now(UTC).isoformat(),
         }
-        producer.produce(
-            CLINICAL_ALERTS_TOPIC,
-            value=json.dumps(alert).encode("utf-8"),
-            callback=delivery_report,
-        )
-        producer.poll(0)
-        producer.flush()
+        try:
+            producer.produce(
+                CLINICAL_ALERTS_TOPIC,
+                value=json.dumps(alert).encode("utf-8"),
+                callback=delivery_report,
+            )
+            producer.flush(timeout=2.0)
+        except Exception as e:
+            print(f"Kafka alert publish failed (non-fatal): {e}")
 
     return prediction
